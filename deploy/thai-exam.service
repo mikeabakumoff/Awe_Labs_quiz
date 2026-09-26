@@ -1,0 +1,17 @@
+[Unit]
+Description=Thai exam quiz Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=thai_exam
+WorkingDirectory=/home/thai_exam/bot
+EnvironmentFile=/home/thai_exam/.env
+Environment=THAI_EXAM_DIR=/home/thai_exam/data
+ExecStart=/home/thai_exam/venv/bin/python3 /home/thai_exam/bot/bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
