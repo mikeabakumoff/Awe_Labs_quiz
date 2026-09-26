@@ -1,5 +1,3 @@
-"""Сборка квиза: предложения от модели, буквы из прописей, без повторов для каждого игрока."""
-
 import json
 import random
 
@@ -57,7 +55,7 @@ def llm_sentences(lessons: list[dict], avoid: list[str], n: int, notes: list[dic
     client = client or anthropic.Anthropic()
     avoid_text = ("\nУже было:\n" + "\n".join(avoid[-400:]) + "\n") if avoid else ""
     focus = [n_["focus"] for n_ in notes or [] if n_.get("focus")]
-    if focus:   # упор от преподавателя, но словарь по-прежнему только из уроков
+    if focus:
         avoid_text += ("\nУказания преподавателя, учти при выборе тем (слова всё равно только из уроков):\n"
                        + "\n".join(f"- {f}" for f in focus[-10:]) + "\n")
     prompt = SENTENCE_PROMPT.format(n=n, avoid=avoid_text, material=material.material_for_prompt(lessons))
@@ -82,7 +80,6 @@ class NotEnough(Exception):
 
 
 def plan_kinds(n_rounds: int, with_letters: bool, rng: random.Random) -> list[str]:
-    """Виды раундов по порядку: буквы равномерно вразбивку, остальное вперемешку."""
     mix = dict(config.MIX)
     if not with_letters:
         mix["ru_th"] += mix.pop("letter") // 2
@@ -98,12 +95,10 @@ def plan_kinds(n_rounds: int, with_letters: bool, rng: random.Random) -> list[st
 
 
 def _levels_for(n: int) -> list[int]:
-    """Сложность растёт по ходу квиза: первая треть - 1, дальше 2 и 3."""
     return [1 + (3 * i) // n for i in range(n)]
 
 
 def transcription(words: list[str], vocab: dict) -> str:
-    """Транскрипция предложения из транскрипций слов урока, как в учебнике."""
     return " ".join(vocab[material._norm_thai(w)]["tr"] for w in words)
 
 
@@ -129,12 +124,10 @@ def _letter_q(letter: str, info: dict) -> dict:
 def build(lessons: list[dict], used: dict[str, dict[str, float]], sentences: list[dict], players: list[str],
           with_letters: bool, rng: random.Random | None = None, n_rounds: int = config.ROUNDS,
           notes: list[dict] | None = None) -> list[list[dict]]:
-    """Раунды квиза: rounds[i][pos] - вопрос игроку players[pos] (ключ игрока - id строкой).
-    NotEnough, если не хватило предложений."""
     rng = rng or random.Random()
     vocab = material.vocabulary(lessons)
     letter_pool = {k: v for k, v in material.letters(lessons).items() if k in propisi.PAGES}
-    # буквы, которые велел учить преподаватель, даже если в уроках их ещё не было (ответ - название по прописям)
+
     for note in notes or []:
         for l in note.get("letters", []):
             if l in propisi.PAGES:
@@ -142,7 +135,7 @@ def build(lessons: list[dict], used: dict[str, dict[str, float]], sentences: lis
     with_letters = with_letters and len(letter_pool) >= 1
     kinds = plan_kinds(n_rounds, with_letters, rng)
 
-    # пул предложений: только собранные из слов уроков, без дублей
+
     pool: dict[int, list[dict]] = {1: [], 2: [], 3: []}
     seen = set()
     for s in sentences:
@@ -154,7 +147,7 @@ def build(lessons: list[dict], used: dict[str, dict[str, float]], sentences: lis
     for lst in pool.values():
         rng.shuffle(lst)
 
-    taken: set[str] = set()      # ключи, уже попавшие в этот квиз
+    taken: set[str] = set()
     got: dict[str, set[str]] = {}
     sentence_rounds = [i for i, k in enumerate(kinds) if k != "letter"]
     levels = dict(zip(sentence_rounds, _levels_for(len(sentence_rounds))))
@@ -164,9 +157,9 @@ def build(lessons: list[dict], used: dict[str, dict[str, float]], sentences: lis
         for p in players:
             mine = used.get(p, {})
             if kind == "letter":
-                # сначала буквы, не занятые в этом квизе и не виденные игроком, потом давно виденные;
-                # если игроков больше, чем букв, буква может достаться двоим в одном квизе
-                own = got.setdefault(p, set())   # буквы, уже доставшиеся игроку в этом квизе
+
+
+                own = got.setdefault(p, set())
                 cand = [l for l in letter_pool if l not in own] or list(letter_pool)
                 cand.sort(key=lambda l: ("letter:" + l in taken, mine.get("letter:" + l, 0), rng.random()))
                 own.add(cand[0])
@@ -189,21 +182,17 @@ def build(lessons: list[dict], used: dict[str, dict[str, float]], sentences: lis
 
 
 def sentences_per_level(n_players: int, n_rounds: int = config.ROUNDS) -> int:
-    """Сколько предложений каждого уровня просить у модели: с запасом на отсев."""
     sentence_rounds = n_rounds - config.MIX.get("letter", 0)
     need = -(-sentence_rounds * n_players // 3)
     return max(12, int(need * 1.5))
 
 
 def avoid_list(used: dict[str, dict[str, float]]) -> list[str]:
-    """Все предложения, которые уже кому-либо задавались."""
     return sorted({k[2:] for keys in used.values() for k in keys if k.startswith("s:")})
 
 
 def make_quiz(lessons: list[dict], used: dict[str, dict[str, float]], players: list[str], with_letters: bool,
               source=llm_sentences, attempts: int = 3, notes: list[dict] | None = None) -> list[list[dict]]:
-    """Просит у модели предложения и собирает квиз; при нехватке просит ещё, копя пул.
-    notes - указания преподавателей: упор для предложений и дополнительные буквы прописей."""
     avoid = avoid_list(used)
     sentences: list[dict] = []
     n = sentences_per_level(len(players))

@@ -1,9 +1,3 @@
-"""SQLite: уроки, квизы, вопросы и что кому уже задавали.
-
-Игрок в базе - это его телеграм-id; история вопросов ведётся по id, поэтому смена
-имени в телеграме ничего не сбивает.
-"""
-
 import json
 import sqlite3
 import time
@@ -70,15 +64,13 @@ CREATE TABLE IF NOT EXISTS questions (
 def connect(path=None) -> sqlite3.Connection:
     con = sqlite3.connect(str(path or config.DB_PATH))
     con.row_factory = sqlite3.Row
-    # первая версия была на троих с фиксированными именами и ни разу не играна: её таблицы пустые
+
     qcols = {r["name"] for r in con.execute("PRAGMA table_info(questions)")}
     if qcols and "player_id" not in qcols:
         con.executescript("DROP TABLE IF EXISTS questions; DROP TABLE IF EXISTS quiz; DROP TABLE IF EXISTS players;")
     con.executescript(SCHEMA)
     return con
 
-
-# ---------- уроки ----------
 
 def save_lesson(con, num: int, filename: str, material: dict):
     with con:
@@ -91,8 +83,6 @@ def lessons(con) -> list[dict]:
     return [{"num": r["num"], "filename": r["filename"], **json.loads(r["material"])} for r in rows]
 
 
-# ---------- сессии квиза (для уборки чата) ----------
-
 def open_session(con, chat_id: int, session: int):
     with con:
         con.execute("INSERT OR REPLACE INTO sessions (chat_id, session) VALUES (?,?)", (chat_id, session))
@@ -104,7 +94,6 @@ def current_session(con, chat_id: int) -> int | None:
 
 
 def track(con, chat_id: int, msg_id: int, session: int | None = None):
-    """Запомнить сообщение за сессией (по умолчанию - за текущей в этом чате)."""
     session = session or current_session(con, chat_id)
     if session:
         with con:
@@ -123,8 +112,6 @@ def close_session(con, chat_id: int, session: int):
         con.execute("DELETE FROM sessions WHERE chat_id=? AND session=?", (chat_id, session))
 
 
-# ---------- указания преподавателей ----------
-
 def save_note(con, text: str, parsed: dict):
     with con:
         con.execute("INSERT INTO notes (text, parsed) VALUES (?,?)", (text, json.dumps(parsed, ensure_ascii=False)))
@@ -135,10 +122,7 @@ def notes(con) -> list[dict]:
             for r in con.execute("SELECT text, parsed FROM notes ORDER BY id")]
 
 
-# ---------- история вопросов ----------
-
 def used_keys(con) -> dict[str, dict[str, float]]:
-    """{id игрока строкой: {ключ вопроса: когда задан}}"""
     out: dict[str, dict[str, float]] = {}
     for r in con.execute("SELECT player, qkey, used_at FROM used"):
         out.setdefault(r["player"], {})[r["qkey"]] = r["used_at"]

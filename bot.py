@@ -1,12 +1,3 @@
-"""Экзаменатор по тайскому: телеграм-часть.
-
-Владелец кидает в группу PDF уроков, бот их разбирает и копит. По слову «Начали»
-открывается лобби: кто хочет играть, жмёт «Я играю», владелец жмёт «Поехали».
-Квиз из 20 раундов: в каждом раунде по заданию каждому игроку, одинаковых по виду
-и сложности. Время считается от показа задания до «Готово», раунд выигрывает
-самый быстрый, квиз - наименьшая сумма времени. Реплики ведущего пишет GPT.
-"""
-
 import asyncio
 import html
 import logging
@@ -32,7 +23,7 @@ log = logging.getLogger("thai_exam")
 
 con = store.connect()
 _busy = {"generating": False}
-# лобби по чатам: {"msg_id": ..., "players": {user_id: имя}} - порядок нажатий = порядок ходов
+
 lobbies: dict[int, dict] = {}
 
 START_RE = re.compile(r"^\s*начали\W*$", re.I)
@@ -60,13 +51,12 @@ def allowed_chat(chat) -> bool:
 
 
 async def gate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Первым делом для любого апдейта: всё, что не из нашей группы, дальше не идёт."""
     chat, user = update.effective_chat, update.effective_user
     log.info("update chat=%s (%s) user=%s", chat.id if chat else None, chat.type if chat else None,
              user.id if user else None)
     if allowed_chat(chat):
         return
-    # добавили в чужую группу - выходим сразу
+
     if chat is not None and chat.type in ("group", "supergroup") and config.GROUP_ID:
         try:
             await context.bot.leave_chat(chat.id)
@@ -109,8 +99,6 @@ async def send_question(bot, chat_id: int, q: game.Question):
     game.mark_shown(con, q, msg.message_id)
     store.track(con, chat_id, msg.message_id)
 
-
-# ---------- кнопка «Готово» ----------
 
 async def on_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -156,8 +144,6 @@ async def on_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         store.track(con, chat_id, m.message_id)
 
 
-# ---------- лобби ----------
-
 def lobby_text(lobby: dict) -> str:
     names = list(lobby["players"].values())
     lines = ["🎤 <b>Квиз по тайскому! Набираем игроков.</b>",
@@ -192,7 +178,7 @@ async def on_start_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     owner = update.effective_user
     lobby = {"players": {owner.id: display_name(owner, set())}}
-    # с этого сообщения всё, что пишется в чат, относится к квизу и уберётся кнопкой «Конец»
+
     store.open_session(con, update.effective_chat.id, update.message.message_id)
     msg = await update.message.reply_text(lobby_text(lobby), parse_mode=ParseMode.HTML, reply_markup=LOBBY_KB)
     store.track(con, msg.chat_id, msg.message_id)
@@ -219,7 +205,7 @@ async def on_lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(lobby_text(lobby), parse_mode=ParseMode.HTML, reply_markup=LOBBY_KB)
         return
 
-    # lobby:go
+
     if user.id != config.OWNER_ID:
         await query.answer("Запускает владелец")
         return
@@ -238,7 +224,6 @@ async def on_lobby(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def prepare_quiz(bot, chat_id: int, players: list[dict]):
-    """Собирает квиз под выбранных игроков и спрашивает «Начинаем?». Задания пойдут по кнопке."""
     lessons = store.lessons(con)
     _busy["generating"] = True
     status = await bot.send_message(
@@ -246,7 +231,7 @@ async def prepare_quiz(bot, chat_id: int, players: list[dict]):
                  f"Готовлю {config.ROUNDS} раундов, это пара минут...")
     store.track(con, chat_id, status.message_id)
     try:
-        # вопросы (Claude) и реплики ведущего (GPT) готовятся параллельно
+
         rounds, host_script = await asyncio.gather(
             asyncio.to_thread(generator.make_quiz, lessons, store.used_keys(con),
                               [str(p["id"]) for p in players], propisi.available(), notes=store.notes(con)),
@@ -298,7 +283,6 @@ def end_keyboard(chat_id: int, label: str) -> InlineKeyboardMarkup | None:
 
 
 async def on_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """«Конец»: удаляем из чата всё, что было за сессию квиза, вместе с самой кнопкой."""
     query = update.callback_query
     if query.from_user.id != config.OWNER_ID:
         await query.answer("Завершает владелец")
@@ -310,7 +294,7 @@ async def on_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     ids = sorted(set(store.session_msgs(con, session)) | {query.message.message_id})
     await query.answer("Убираю квиз")
-    for i in range(0, len(ids), 100):   # телеграм удаляет до 100 за раз и только моложе 48 часов
+    for i in range(0, len(ids), 100):
         try:
             await context.bot.delete_messages(chat_id, ids[i:i + 100])
         except Exception:
@@ -319,12 +303,9 @@ async def on_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def track_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Любое сообщение в группе во время сессии квиза запоминаем, чтобы «Конец» убрал и его."""
     if update.message:
         store.track(con, update.effective_chat.id, update.message.message_id)
 
-
-# ---------- уроки ----------
 
 async def on_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_owner(update):
@@ -338,7 +319,7 @@ async def on_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     path = config.PROPISI_PDF if is_propisi else config.LESSONS_DIR / name
     await tg_file.download_to_drive(path)
 
-    # файл у нас - убираем его из группы, чтобы там не копились pdf
+
     note = ""
     try:
         await update.message.delete()
@@ -375,7 +356,6 @@ async def on_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def on_teacher_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Пересланное владельцем сообщение преподавателя: сохраняем, убираем из группы, учитываем в квизе."""
     if not is_owner(update):
         return
     msg = update.message
@@ -435,9 +415,9 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     app = Application.builder().token(os.environ["THAI_EXAM_BOT_TOKEN"]).build()
-    app.add_handler(TypeHandler(Update, gate), group=-1)   # только наша группа
+    app.add_handler(TypeHandler(Update, gate), group=-1)
     app.add_handler(MessageHandler(filters.Document.PDF | filters.Document.FileExtension("pdf"), on_pdf))
-    # пересланный текст или подпись (указание преподавателя) - раньше «Начали»/«Стоп»
+
     app.add_handler(MessageHandler(filters.FORWARDED & (filters.TEXT | filters.CAPTION), on_teacher_note))
     app.add_handler(MessageHandler(filters.TEXT & filters.Regex(START_RE), on_start_quiz))
     app.add_handler(MessageHandler(filters.TEXT & filters.Regex(STOP_RE), on_stop_quiz))
@@ -445,7 +425,7 @@ def main():
     app.add_handler(CallbackQueryHandler(on_lobby, pattern=r"^lobby:(join|go)$"))
     app.add_handler(CallbackQueryHandler(on_begin, pattern=r"^begin:\d+$"))
     app.add_handler(CallbackQueryHandler(on_end, pattern=r"^end:\d+$"))
-    app.add_handler(MessageHandler(filters.ALL, track_chat), group=1)   # отдельная группа: не мешает командам
+    app.add_handler(MessageHandler(filters.ALL, track_chat), group=1)
     app.add_handler(CommandHandler("lessons", cmd_lessons))
     app.add_handler(CommandHandler(["help", "start"], cmd_help))
     app.add_error_handler(on_error)

@@ -1,5 +1,3 @@
-"""Идёт ли сейчас квиз: python check_state.py"""
-
 import store
 
 con = store.connect()

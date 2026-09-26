@@ -1,5 +1,3 @@
-"""Разбор PDF урока моделью и словарь, по которому проверяются сгенерированные предложения."""
-
 import base64
 import json
 import re
@@ -51,7 +49,6 @@ EXTRACT_SCHEMA = {
 
 
 def extract(pdf_bytes: bytes, client=None) -> dict:
-    """PDF урока -> материал по EXTRACT_SCHEMA. Синхронный вызов, из бота звать через to_thread."""
     import anthropic
     client = client or anthropic.Anthropic()
     with client.messages.stream(
@@ -97,7 +94,6 @@ NOTE_SCHEMA = {
 
 
 def parse_note(text: str, client=None) -> dict:
-    """Указание преподавателя -> {lesson, letters, focus}. Синхронно, из бота звать через to_thread."""
     import anthropic
     import propisi
     client = client or anthropic.Anthropic()
@@ -130,17 +126,12 @@ def guess_lesson(filename: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-# ---------- словарь ----------
-
 def norm_tr(tr: str) -> str:
-    """В уроке 2 транскрипция в /косых/, в остальных в [квадратных] скобках: приводим к скобкам."""
     tr = re.sub(r"/([^/]*)/", r"[\1]", (tr or "").strip())
     return tr if tr.startswith("[") or not tr else f"[{tr}]"
 
 
 def letter_words(lessons: list[dict]) -> list[dict]:
-    """Слова-названия выученных букв (ม - ม้า «лошадь», ฟ - ฟัน «зуб»): их тоже можно ставить в предложения.
-    Транскрипция слова - вторые скобки в транскрипции буквы из урока, перевод - из урока."""
     import propisi
     out = []
     for les in lessons:
@@ -155,7 +146,6 @@ def letter_words(lessons: list[dict]) -> list[dict]:
 
 
 def vocabulary(lessons: list[dict]) -> dict[str, dict]:
-    """Все слова всех уроков, включая слова-названия выученных букв: тайское написание -> {tr, ru, lesson}."""
     vocab = {}
     for les in lessons:
         for w in les.get("words", []):
@@ -174,7 +164,6 @@ def letters(lessons: list[dict]) -> dict[str, dict]:
 
 
 def check_sentence(words: list[str], thai: str, vocab: dict) -> str | None:
-    """None, если предложение собрано только из слов уроков; иначе причина отказа."""
     words = [_norm_thai(w) for w in words]
     if not words:
         return "пустое предложение"
@@ -187,7 +176,6 @@ def check_sentence(words: list[str], thai: str, vocab: dict) -> str | None:
 
 
 def material_for_prompt(lessons: list[dict]) -> str:
-    """Компактный текст материала всех уроков для генерации вопросов."""
     parts = []
     for les in lessons:
         p = [f"## Урок {les['num']}"]
@@ -199,7 +187,7 @@ def material_for_prompt(lessons: list[dict]) -> str:
             p.append("Фразы: " + "; ".join(f"{f['thai']} ({f['ru']})" for f in les["phrases"]))
         parts.append("\n".join(p))
     lw = letter_words(lessons)
-    if lw:   # тоже разрешённые слова: ставь их в предложения, это повторение букв
+    if lw:
         parts.append("## Слова-названия выученных букв (тоже можно и нужно использовать в предложениях)\n"
                      + "; ".join(f"{w['thai']} {w['tr']} - {w['ru']}" for w in lw))
     return "\n\n".join(parts)

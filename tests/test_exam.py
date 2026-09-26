@@ -1,5 +1,3 @@
-"""Проверки логики квиза без телеграма и без моделей. Запуск: python tests/test_exam.py"""
-
 import os
 import random
 import sys
@@ -10,12 +8,12 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 os.environ["THAI_EXAM_DIR"] = tempfile.mkdtemp(prefix="thai-exam-test-")
 
-import config  # noqa: E402
-import game  # noqa: E402
-import generator  # noqa: E402
-import host  # noqa: E402
-import material  # noqa: E402
-import store  # noqa: E402
+import config
+import game
+import generator
+import host
+import material
+import store
 
 NAMES = ["Анна", "Борис", "Вера"]
 
@@ -48,7 +46,7 @@ def fake_sentences(n_per_level: int, seed: int = 0, bad: int = 0) -> list[dict]:
         for _ in range(n_per_level):
             words = rng.sample(WORDS, size)
             out.append({"level": level, "words": words, "thai": "".join(words), "ru": " ".join(words)})
-    for _ in range(bad):   # слово не из уроков
+    for _ in range(bad):
         out.append({"level": 1, "words": ["แม่", "มา"], "thai": "แม่มา", "ru": "мама пришла"})
     return out
 
@@ -58,7 +56,6 @@ def fresh_db():
 
 
 def start(con, *args, **kw):
-    """Собрать квиз и сразу нажать «Начинаем»."""
     qid = game.start(con, *args, **kw)
     assert game.begin(con, qid)
     return qid
@@ -76,18 +73,14 @@ def check(fn):
     return fn
 
 
-# ---------- словарь ----------
-
 @check
 def sentence_only_from_lesson_words():
     vocab = material.vocabulary(LESSONS)
     assert material.check_sentence(["ยาย", "มา"], "ยายมา", vocab) is None
     assert "แม่" in material.check_sentence(["แม่", "มา"], "แม่มา", vocab)
     assert material.check_sentence(["ยาย", "มา"], "ยายไป", vocab) is not None
-    assert material.check_sentence(["ยาย", "มา"], "ยาย มา", vocab) is None   # пробелы не мешают
+    assert material.check_sentence(["ยาย", "มา"], "ยาย มา", vocab) is None
 
-
-# ---------- сборка квиза ----------
 
 @check
 def quiz_shape_and_mix():
@@ -96,7 +89,7 @@ def quiz_shape_and_mix():
     kinds = [t[0]["kind"] for t in rounds]
     for k, n in config.MIX.items():
         assert kinds.count(k) == n, (k, kinds)
-    for t in rounds:   # в раунде у всех один вид задания
+    for t in rounds:
         assert len({q["kind"] for q in t}) == 1
 
 
@@ -166,19 +159,19 @@ def make_quiz_asks_again_when_short():
 
     rounds = generator.make_quiz(LESSONS, {}, P, True, source=source)
     assert len(rounds) == config.ROUNDS and len(calls) >= 2
-    assert calls[1] > 0   # во второй раз модели показали уже полученное
+    assert calls[1] > 0
 
 
 @check
 def teacher_letters_join_propisi_questions():
-    notes = [{"lesson": 6, "letters": ["ศ", "ษ", "zz"], "focus": ""}]   # ศ ษ в уроках ещё не было
+    notes = [{"lesson": 6, "letters": ["ศ", "ษ", "zz"], "focus": ""}]
     seen = set()
     for seed in range(6):
         rounds = generator.build(LESSONS, {}, fake_sentences(30), P, True, rng=random.Random(seed), notes=notes)
         seen |= {q["qkey"] for t in rounds for q in t if q["kind"] == "letter"}
     assert {"letter:ศ", "letter:ษ"} & seen
     q = generator._letter_q("ศ", {"tr": "", "ru": ""})
-    assert q["answer"] == "ศ (ศ.ศาลา) - павильон"   # буквы нет в уроках: перевод из словаря названий
+    assert q["answer"] == "ศ (ศ.ศาลา) - павильон"
     assert "что значит" in q["prompt"]
 
 
@@ -193,7 +186,7 @@ def letter_name_words_go_into_sentences():
     les = [{"num": 4, "words": [{"thai": "มา", "tr": "[ма:]", "ru": "приходить"}], "grammar": [], "phrases": [],
             "letters": [{"letter": "ม", "tr": "[мɔ:] [ма:ʹ]", "ru": "лошадь"},
                         {"letter": "ฝ", "tr": "[фɔ:ˇ] «крышка» [фа:ˇ]", "ru": "крышка"},
-                        {"letter": "ร", "tr": "[рɔ:]", "ru": "лодка"}]}]   # без второй транскрипции - не берём
+                        {"letter": "ร", "tr": "[рɔ:]", "ru": "лодка"}]}]
     vocab = material.vocabulary(les)
     assert vocab["ม้า"] == {"tr": "[ма:ʹ]", "ru": "лошадь", "lesson": 4}
     assert vocab["ฝา"]["tr"] == "[фа:ˇ]" and "เรือ" not in vocab
@@ -223,8 +216,6 @@ def slash_transcription_becomes_brackets():
     assert material.vocabulary(les)["นาย"]["tr"] == "[на:й]"
 
 
-# ---------- любое число игроков ----------
-
 @check
 def one_player_quiz():
     pl = players(1)
@@ -253,9 +244,9 @@ def many_players_quiz():
 
 @check
 def more_players_than_letters():
-    pl = players(10)   # 10 игроков * 4 раунда букв > 14 выученных букв
+    pl = players(10)
     rounds = build(fake_sentences(generator.sentences_per_level(10), seed=22), keys(pl), seed=22)
-    for pos in range(10):   # у каждого буквы в квизе без повторов
+    for pos in range(10):
         mine = [t[pos]["qkey"] for t in rounds if t[0]["kind"] == "letter"]
         assert len(mine) == len(set(mine)) == config.MIX["letter"]
 
@@ -265,10 +256,7 @@ def request_size_grows_with_players():
     assert generator.sentences_per_level(1) < generator.sentences_per_level(3) < generator.sentences_per_level(8)
 
 
-# ---------- ход игры ----------
-
 def play_all(con, t0=1000.0, speeds=(3, 2, 1)):
-    """Отыгрывает квиз целиком: игрок pos отвечает за speeds[pos] секунд."""
     t = t0
     last = None
     q = game.current(con)
@@ -287,14 +275,14 @@ def turn_order_and_timing():
     start(con, -100, PL, build(fake_sentences(30), seed=7), now=1.0)
     q = game.current(con)
     assert (q.round, q.player_id) == (1, PL[0]["id"])
-    assert game.press(con, q.id, PL[0]["id"], now=5).status == "stale"   # ещё не показано
+    assert game.press(con, q.id, PL[0]["id"], now=5).status == "stale"
     game.mark_shown(con, q, 11, now=10.0)
     assert game.press(con, q.id, PL[1]["id"], now=11).status == "not_yours"
-    assert game.press(con, q.id, 999, now=11).status == "not_yours"     # зритель, не игрок
+    assert game.press(con, q.id, 999, now=11).status == "not_yours"
     r = game.press(con, q.id, PL[0]["id"], now=14.5)
     assert r.status == "ok" and abs(r.question.elapsed - 4.5) < 1e-9
     assert r.next.player_id == PL[1]["id"] and r.round_result is None
-    assert game.press(con, q.id, PL[0]["id"], now=15).status == "stale"   # повторное нажатие
+    assert game.press(con, q.id, PL[0]["id"], now=15).status == "stale"
 
 
 @check
@@ -326,7 +314,7 @@ def restart_starts_over_and_does_not_repeat():
     sentences = fake_sentences(60, seed=11)
     r1 = build(sentences, used=store.used_keys(con), seed=10)
     start(con, -100, PL, r1, now=1.0)
-    for _ in range(9):   # отыграли три раунда и перезапустили
+    for _ in range(9):
         q = game.current(con)
         game.mark_shown(con, q, q.id, now=2.0)
         game.press(con, q.id, q.player_id, now=3.0)
@@ -338,13 +326,12 @@ def restart_starts_over_and_does_not_repeat():
     for t in r2:
         for pos, x in enumerate(t):
             assert (x["qkey"], P[pos]) not in shown, x
-    # неразыгранные вопросы первого квиза не считаются заданными
+
     assert r1[5][0]["qkey"] not in store.used_keys(con)[P[0]]
 
 
 @check
 def history_follows_person_not_seat():
-    """Игрок сел вторым вместо первого - его история всё равно учитывается."""
     con = fresh_db()
     sentences = fake_sentences(60, seed=14)
     r1 = build(sentences, used=store.used_keys(con), seed=14)
@@ -370,7 +357,7 @@ def letters_cycle_through_before_repeating():
                 if q["kind"] == "letter":
                     seen[P[pos]].append(q["qkey"])
                 store.mark_used(con, P[pos], q["qkey"], t=100.0 + i)
-    for p in P:   # 12 букв за три квиза из 14 выученных - без повторов
+    for p in P:
         assert len(seen[p]) == 12 and len(set(seen[p])) == 12, seen[p]
 
 
@@ -378,10 +365,10 @@ def letters_cycle_through_before_repeating():
 def quiz_waits_for_begin_button():
     con = fresh_db()
     qid = game.start(con, -100, PL, build(fake_sentences(30), seed=30), now=1.0)
-    assert game.current(con) is None and game.active_quiz(con) is None   # собран, но заданий нет
+    assert game.current(con) is None and game.active_quiz(con) is None
     assert game.begin(con, qid, now=50.0)
     assert game.current(con).round == 1
-    assert not game.begin(con, qid)   # второе нажатие «Начинаем» ничего не делает
+    assert not game.begin(con, qid)
 
 
 @check
@@ -389,10 +376,10 @@ def stop_and_restart_cancel_ready_quiz():
     con = fresh_db()
     q1 = game.start(con, -100, PL, build(fake_sentences(30), seed=31), now=1.0)
     assert game.stop(con)
-    assert not game.begin(con, q1)   # старая кнопка после «Стоп»
+    assert not game.begin(con, q1)
     q2 = game.start(con, -100, PL, build(fake_sentences(30), seed=32), now=2.0)
     q3 = game.start(con, -100, PL, build(fake_sentences(30), seed=33), now=3.0)
-    assert not game.begin(con, q2) and game.begin(con, q3)   # кнопка заменённого квиза не работает
+    assert not game.begin(con, q2) and game.begin(con, q3)
 
 
 @check
@@ -400,15 +387,15 @@ def session_collects_messages_until_end():
     con = fresh_db()
     chat = -100
     assert store.current_session(con, chat) is None
-    store.track(con, chat, 5)                       # до «Начали» ничего не копится
+    store.track(con, chat, 5)
     store.open_session(con, chat, 10)
     for m in (10, 11, 12, 12):
         store.track(con, chat, m)
     assert store.session_msgs(con, 10) == [10, 11, 12]
-    store.open_session(con, chat, 50)               # новое «Начали», старый квиз не убран
+    store.open_session(con, chat, 50)
     store.track(con, chat, 51)
     assert store.session_msgs(con, 10) == [10, 11, 12] and store.session_msgs(con, 50) == [51]
-    store.close_session(con, chat, 10)              # «Конец» старого не трогает новый
+    store.close_session(con, chat, 10)
     assert store.session_msgs(con, 10) == [] and store.current_session(con, chat) == 50
     store.close_session(con, chat, 50)
     assert store.current_session(con, chat) is None
@@ -416,21 +403,18 @@ def session_collects_messages_until_end():
     assert store.session_msgs(con, 50) == []
 
 
-# ---------- ведущий ----------
-
 @check
 def host_script_survives_bad_model_output():
     s = host.Script("привет", [["a", "b"]], ["{winner} за {time}", "сломано {oops}", "{"], ["{winner}!", "{x}"])
     assert s.round_comments == ["{winner} за {time}"] and s.finale == ["{winner}!"]
     assert s.intro(1, 0, "Анна") == "a"
-    assert "Вера" in s.intro(1, 2, "Вера")   # подводки не хватило - запасная с именем
-    assert "Борис" in s.intro(7, 1, "Борис")   # раунда нет вовсе
+    assert "Вера" in s.intro(1, 2, "Вера")
+    assert "Борис" in s.intro(7, 1, "Борис")
     assert s.round_comment("Борис", "3.0 с") == "Борис за 3.0 с"
 
 
 @check
 def host_drops_gendered_and_case_broken_templates():
-    """Шаблоны из настоящего прогона GPT 26.09: имя подставляется как есть, в именительном падеже."""
     bad = ["Самая быстрая реакция у {winner}: {time}!", "Быстрее всех оказался {winner}: {time}.",
            "Вот это темп: {winner} справился за {time}!", "На финише первым оказался {winner}, время - {time}.",
            "{winner} сделал рывок и остановил таймер на {time}!"]
@@ -475,7 +459,7 @@ def quiz_keeps_host_script_and_players():
 
 if __name__ == "__main__":
     import logging
-    logging.disable(logging.CRITICAL)   # запасной режим ведущего пишет трейсбэки, в тестах они ожидаемы
+    logging.disable(logging.CRITICAL)
     failed = 0
     for fn in checks:
         try:

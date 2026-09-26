@@ -1,10 +1,3 @@
-"""Ход квиза без телеграма: очередь вопросов, засечка времени, итоги раундов и квиза.
-
-Время хранится как time.time() в базе, поэтому перезапуск бота посреди квиза
-ничего не ломает: кнопка на последнем задании продолжает работать.
-Игроки квиза - список {"id", "name"} в порядке ходов, их может быть сколько угодно.
-"""
-
 import json
 import time
 from dataclasses import dataclass, field
@@ -38,11 +31,11 @@ class Question:
 
 @dataclass
 class PressResult:
-    status: str                      # ok | stale | not_yours
+    status: str
     question: "Question | None" = None
     next: "Question | None" = None
-    round_result: list[tuple[str, float]] | None = None   # игроки раунда по возрастанию времени
-    final: list[tuple[str, float]] | None = None          # итог квиза по возрастанию суммы
+    round_result: list[tuple[str, float]] | None = None
+    final: list[tuple[str, float]] | None = None
     total_rounds: int = 0
     wins: dict[str, int] = field(default_factory=dict)
 
@@ -59,8 +52,6 @@ def active_quiz(con):
 
 def start(con, chat_id: int, players: list[dict], rounds: list[list[dict]], now: float | None = None,
           script: str | None = None) -> int:
-    """Останавливает прежний квиз и заводит новый в статусе ready: задания пойдут после begin().
-    rounds[i][pos] - вопрос игроку players[pos]. script - реплики ведущего (host.Script.to_json())."""
     now = now or time.time()
     with con:
         con.execute("UPDATE quiz SET status='stopped', finished_at=? WHERE status IN ('ready', 'active')", (now,))
@@ -79,7 +70,6 @@ def start(con, chat_id: int, players: list[dict], rounds: list[list[dict]], now:
 
 
 def begin(con, quiz_id: int, now: float | None = None) -> bool:
-    """«Начинаем»: собранный квиз становится идущим. False, если он уже идёт, отменён или заменён."""
     with con:
         cur = con.execute("UPDATE quiz SET status='active', started_at=? WHERE id=? AND status='ready'",
                           (now or time.time(), quiz_id))
@@ -117,7 +107,6 @@ def total_rounds(con, quiz_id: int) -> int:
 
 
 def mark_shown(con, q: Question, msg_id: int, now: float | None = None):
-    """Засекаем время, когда задание уже на экране, и помечаем вопрос заданным этому игроку."""
     now = now or time.time()
     with con:
         con.execute("UPDATE questions SET msg_id=?, shown_at=? WHERE id=?", (msg_id, now, q.id))
@@ -131,7 +120,6 @@ def round_result(con, quiz_id: int, rnd: int) -> list[tuple[str, float]]:
 
 
 def standings(con, quiz_id: int) -> tuple[list[tuple[str, float]], dict[str, int]]:
-    """Сумма времени по игрокам (по возрастанию) и число выигранных раундов."""
     names = [p["name"] for p in quiz_players(con, quiz_id)]
     rows = [_q(r) for r in con.execute("SELECT * FROM questions WHERE quiz_id=? AND done_at IS NOT NULL", (quiz_id,))]
     totals = {n: 0.0 for n in names}

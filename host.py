@@ -1,9 +1,3 @@
-"""Весёлый ведущий (GPT, творческая часть отдана ему; Claude только вопросы): реплики к заданиям, итогам раундов, финалу и новым урокам.
-
-Реплики на весь квиз модель пишет одним запросом при старте, чтобы во время игры
-не ждать её ответа. Если запрос не удался, берутся фразы из запасного набора.
-"""
-
 import json
 import random
 import re
@@ -42,7 +36,6 @@ QUIZ_SCHEMA = {
     "additionalProperties": False,
 }
 
-# ---------- запасной набор ----------
 
 FALLBACK_OPENING = [
     "🎤 Дамы и господа, вопросы разложены по конвертам, секундомер заряжен! Всё готово. Начинаем?",
@@ -79,21 +72,16 @@ def _ok_template(t: str, *keys: str) -> bool:
     return "winner" not in keys or _neutral_winner(t)
 
 
-# глагол прошедшего времени сразу после имени выдаёт род: «Катя справился»
 _GENDERED_AFTER = re.compile(r"\{winner\}\s+[а-яё]+(л|ла|лся|лась)\b", re.I)
 
 
 def _neutral_winner(t: str) -> bool:
-    """Имя стоит там, где годится любое имя в именительном падеже: в начале фразы или после двоеточия
-    либо восклицания, и за ним нет глагола с родовым окончанием. Модель, несмотря на промпт,
-    пишет «у {winner}», «оказался {winner}», «{winner} справился»."""
     if not (re.match(r"^\W*\{winner\}", t) or re.search(r"[:!]\s*\{winner\}", t)):
         return False
     return not _GENDERED_AFTER.search(t)
 
 
 class Script:
-    """Реплики ведущего на один квиз."""
 
     def __init__(self, opening: str, intros: list[list[str]], round_comments: list[str], finale: list[str],
                  rng: random.Random | None = None):
@@ -137,7 +125,6 @@ def fallback_script(players: list[str], rounds: int = config.ROUNDS, rng: random
 
 
 def _gpt(prompt: str, schema: dict | None = None, client=None) -> str:
-    """Запрос к HOST_MODEL через OpenAI Responses API, возвращает текст ответа."""
     from openai import OpenAI
     client = client or OpenAI()
     kw = {}
@@ -148,7 +135,6 @@ def _gpt(prompt: str, schema: dict | None = None, client=None) -> str:
 
 
 def quiz_script(players: list[str], rounds: int = config.ROUNDS, client=None) -> Script:
-    """Реплики на весь квиз от GPT; при любой ошибке запасной набор."""
     try:
         prompt = QUIZ_PROMPT.format(rounds=rounds, n=len(players), players=", ".join(players))
         d = json.loads(_gpt(prompt, QUIZ_SCHEMA, client))

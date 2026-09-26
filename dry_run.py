@@ -1,5 +1,3 @@
-"""Пробная сборка квиза без телеграма и без записи в историю: python dry_run.py [имя ...]"""
-
 import concurrent.futures as cf
 import sys
 

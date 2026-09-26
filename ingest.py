@@ -1,5 +1,3 @@
-"""Разбор урока из командной строки, без телеграма: python ingest.py <pdf> [...]"""
-
 import sys
 from pathlib import Path
 
@@ -10,7 +8,7 @@ import store
 def main(paths: list[str]):
     con = store.connect()
     files = []
-    for p in map(Path, paths):   # каталог = все pdf уроков в нём, кроме прописей
+    for p in map(Path, paths):
         files += sorted(f for f in p.glob("*.pdf") if "propis" not in f.name.lower()) if p.is_dir() else [p]
     for p in files:
         data = material.extract(p.read_bytes())
